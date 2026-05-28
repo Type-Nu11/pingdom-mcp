@@ -1,0 +1,5 @@
+*.env
+.env
+config.lua
+src/global/modules/*
+src/global/config/*
