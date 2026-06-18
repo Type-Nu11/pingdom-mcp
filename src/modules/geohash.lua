@@ -35,7 +35,7 @@ local function encode(lat, lng, precision)
         end
 
         even = not even -- 짝수/홀수 비트 토글
-        bit = bit + 1 -- 비트 인덱스값 더함 
+        bit = bit + 1 -- 비트 인덱스값 더함
         if bit == 5 then -- 인덱스 5를 만났을 때, BASE32에서 해당 인덱스에 해당하는 문자 추가
             hash = hash .. BASE32:sub(ch + 1, ch + 1)
             -- 초기화
@@ -46,8 +46,62 @@ local function encode(lat, lng, precision)
     return hash
 end
 
-return {
-    encode = encode
+local M = {
+    encode = encode,
+    -- precision 단일 관리처: 셀 크기 결정 (6≈1.2km, 7≈150m). city-wide 데이터엔 6 권장.
+    DEFAULT_PRECISION = 7,
 }
 
+-- 반경 내 포인트들을 geohash 셀로 묶어 인구통계 집계
+-- rows: { {lng, lat, birth_year, gender, hour}, ... }
+-- opts: { precision?, by_min, by_max, gender('M'|'F'|'ANY') }
+-- 반환: { {cell, total_foot, age_match, gender_match, avg_hour, lat, lng}, ... }
+function M.aggregate(rows, opts)
+    opts = opts or {}
+    local p = opts.precision or M.DEFAULT_PRECISION
+    local by_min, by_max, gender = opts.by_min, opts.by_max, opts.gender
 
+    local cells = {}
+    for _, r in ipairs(rows) do
+        local lat = tonumber(r.lat)
+        local lng = tonumber(r.lng)
+        if lat and lng then
+            local key = encode(lat, lng, p)
+            local c = cells[key]
+            if not c then
+                c = { cell = key, total_foot = 0, age_match = 0, gender_match = 0,
+                      hour_sum = 0, lat_sum = 0, lng_sum = 0 }
+                cells[key] = c
+            end
+            c.total_foot = c.total_foot + 1
+
+            local by = tonumber(r.birth_year)
+            if by_min and by_max and by and by >= by_min and by <= by_max then
+                c.age_match = c.age_match + 1
+            end
+            if (not gender) or gender == "ANY" or r.gender == gender then
+                c.gender_match = c.gender_match + 1
+            end
+
+            c.hour_sum = c.hour_sum + (tonumber(r.hour) or 0)
+            c.lat_sum  = c.lat_sum + lat
+            c.lng_sum  = c.lng_sum + lng
+        end
+    end
+
+    local out = {}
+    for _, c in pairs(cells) do
+        out[#out + 1] = {
+            cell         = c.cell,
+            total_foot   = c.total_foot,
+            age_match    = c.age_match,
+            gender_match = c.gender_match,
+            avg_hour     = math.floor(c.hour_sum / c.total_foot * 10 + 0.5) / 10,
+            lat          = c.lat_sum / c.total_foot,   -- 셀 내 실제 포인트 중심(centroid)
+            lng          = c.lng_sum / c.total_foot,
+        }
+    end
+    return out
+end
+
+return M

@@ -1,11 +1,12 @@
 local db = require("lapis.db")
-local BaseRepository = require("src.global.repository.baseRepository")
+local BaseRepository = require("src.modules.baseRepository")
 
 local LocationRepository = setmetatable({}, { __index = BaseRepository })
+LocationRepository.__index = LocationRepository
 
 function LocationRepository:save(data)
     if not data.account_id then
-        return nil, "account_id is required"
+        return nil, "INVALID_INPUT"
     end
 
     return db.query([[
@@ -18,7 +19,7 @@ end
 -- 조회
 function LocationRepository:findByFilters(gender, birth_year, created_at)
     if not gender and not birth_year and not created_at then
-        return nil, "at least one filter is required"
+        return nil, "INVALID_INPUT"
     end
 
     local where, params = {}, {}
@@ -32,8 +33,8 @@ function LocationRepository:findByFilters(gender, birth_year, created_at)
         table.insert(params, tonumber(birth_year))
     end
     if created_at then
-        table.insert(where, "created_at = ?")
-        table.insert(params, created_at)
+        table.insert(where, "created_at::date = ?")
+        table.insert(params, created_at)   -- "2026-06-04"
     end
 
     local sql = [[
@@ -41,10 +42,37 @@ function LocationRepository:findByFilters(gender, birth_year, created_at)
                ST_X(geom) AS lng,
                ST_Y(geom) AS lat,
                created_at
-        FROM observations
+        FROM locations
         WHERE ]] .. table.concat(where, " AND ")
 
     return db.query(sql, table.unpack(params))
+end
+
+-- 입지 추천: 중심좌표 반경 내 원시 포인트 반환. (geohash 셀 묶기/집계는 geohash 모듈이 담당)
+-- 반환 row: { lng, lat, birth_year, gender, hour }
+function LocationRepository:findInRadius(center_lng, center_lat, radius_m)
+    if not (center_lng and center_lat) then
+        return nil, "INVALID_INPUT"
+    end
+
+    local radius = tonumber(radius_m) or 1500
+
+    local sql = [[
+        SELECT
+            ST_X(geom)                    AS lng,
+            ST_Y(geom)                    AS lat,
+            birth_year,
+            gender,
+            EXTRACT(HOUR FROM created_at) AS hour
+        FROM locations
+        WHERE ST_DWithin(
+            geom::geography,
+            ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography,
+            ?
+        )
+    ]]
+
+    return db.query(sql, tonumber(center_lng), tonumber(center_lat), radius)
 end
 
 return LocationRepository
