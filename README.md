@@ -1,11 +1,5 @@
 <img width="7680" height="4320" alt="MCP_" src="https://github.com/user-attachments/assets/b8fd06ce-cfe3-41ee-a9ee-48b16d48c1d5" />
 
-# Pingdom MCP Server
-
-<래포지토리 사진>
-
----
-
 ## Overview
 
 이 저장소는 Pingdom 프로젝트의 **MCP Server 영역**을 관리합니다.
