@@ -1,0 +1,12 @@
+# .env for local docker-compose
+```
+PORT=
+DB_HOST=
+DB_PORT=
+DB_USER=
+DB_PASSWORD=
+DB_NAME=
+SESSION_SECRET=
+GEMINI_API_KEY=
+GEMINI_MODEL=
+```
