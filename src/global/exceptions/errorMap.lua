@@ -9,7 +9,7 @@ return {
     NOT_FOUND             = { status = 404, message = "Not found" },
     INTERNAL_SERVER_ERROR = { status = 500, message = "Internal server error" },
 
-    -- recommendation / llm (groq)
+    -- recommendation / llm (gemini)
     LLM_NO_KEY         = { status = 500, message = "LLM API key not configured" },
     LLM_CONNECT_FAILED = { status = 502, message = "Failed to reach LLM provider" },
     LLM_BAD_JSON       = { status = 502, message = "Invalid LLM response" },

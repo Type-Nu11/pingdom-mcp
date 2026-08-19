@@ -1,56 +1,15 @@
 -- src/domain/recommendation/service/recommendationService.lua
--- 업종 + 지역 → Groq(함수콜)로 "타깃 인구통계"만 추론 → 반경 내 포인트 조회 → geohash 모듈로 셀 집계
+-- 업종 + 지역 → Gemini(함수콜)로 "타깃 인구통계"만 추론 → 반경 내 포인트 조회 → geohash 모듈로 셀 집계
 -- → 점수화·랭킹·역지오코딩은 코드에서 결정적으로 처리(한글 깨짐/환각 방지) → 구조화 JSON 반환
-local groq         = require("src.modules.groqClient")
 local geo          = require("src.modules.GeoEncoder")
 local geohash      = require("src.modules.geohash")
 local locationRepo = require("src.global.repository.locationRepository")
-local env          = require("src.global.config.env")
+local tool         = require("src.domain.recommendation.tool.recommendationTool")
+local llmClient    = require("src.ai.llmClient")
 local cjson        = require("cjson")
 
 local THIS_YEAR = 2026
 local TOP_N     = 5
-
-local SYSTEM_PROMPT = [[
-너는 상권 입지 분석 챗봇이다. 직원의 질문에서 조건을 파악해 recommend_location 툴을
-반드시 1회 호출하라. (설명 문장 출력 금지, 툴 호출만)
-
-조건 파악:
-- 지역(region): 질문에 나온 지역명을 그대로.
-- 연령(age_min/age_max): 질문에 나이대가 있으면 그대로 사용. 없고 업종만 있으면 그 업종의
-  핵심 고객 나이대를 추론. (age_min ≤ age_max, 정수)
-- 성별(gender): 질문에 있으면 'M'/'F', 없으면 'ANY'.
-- radius_m 기본 1500.
-]]
-
-local TOOLS = {
-    {
-        type = "function",
-        ["function"] = {
-            name = "recommend_location",
-            description = "업종 타깃 인구통계로 지역 내 입지를 조회한다",
-            parameters = {
-                type = "object",
-                properties = {
-                    region   = { type = "string",  description = "예: '대구 북구'" },
-                    radius_m = { type = "integer", description = "검색 반경(m), 기본 1500" },
-                    age_min  = { type = "integer", description = "타깃 최소 나이 (예: 20)" },
-                    age_max  = { type = "integer", description = "타깃 최대 나이 (예: 45)" },
-                    gender   = { type = "string",  enum = { "M", "F", "ANY" } },
-                },
-                required = { "region", "age_min", "age_max", "gender" },
-            },
-        },
-    },
-}
-
--- Llama 가 tool_calls 대신 본문에 <function=NAME>{json}</function> 로 새는 경우 파싱 폴백
-local function parse_inline_call(content)
-    if type(content) ~= "string" then return nil end
-    local name, args = content:match("<function=([%w_]+)>%s*(%b{})")
-    if not name then return nil end
-    return { ["function"] = { name = name, arguments = args } }
-end
 
 -- 후보 셀들을 점수화 후 상위 TOP_N 반환 (min-max 정규화)
 local function score_and_rank(rows)
@@ -129,7 +88,28 @@ end
 
 local RecommendationService = {}
 
+-- 호출자가 직접 지정한 타깃 조건. 지정된 값은 LLM 추론보다 항상 우선한다.
+local ARG_KEYS = { "region", "age_min", "age_max", "gender", "radius_m" }
+
+local function normalize_gender(g)
+    if type(g) ~= "string" or g == "" then return nil end
+    g = g:upper()
+    if g == "M" or g == "F" then return g end
+    return "ANY"
+end
+
+local function explicit_args(input, region)
+    return {
+        region   = region,
+        age_min  = tonumber(input.age_min),
+        age_max  = tonumber(input.age_max),
+        gender   = normalize_gender(input.gender),
+        radius_m = tonumber(input.radius_m),
+    }
+end
+
 -- input: { message=자유질문 } 또는 { business=업종, region=지역 }
+--        MCP 툴 경로처럼 { region, age_min, age_max, gender, radius_m } 를 직접 넘길 수도 있다.
 function RecommendationService.recommend(input)
     local business = input.business or input["업종"]
     local region   = input.region   or input["지역"]
@@ -137,37 +117,50 @@ function RecommendationService.recommend(input)
     if not message and not (business or region) then
         return nil, "INVALID_INPUT"
     end
-    local user_content = message
-        or ("업종: %s\n지역: %s"):format(business or "", region or "")
 
-    local api_key = env.get("GROQ_API_KEY")
-    if not api_key or api_key == "" then
-        return nil, "LLM_NO_KEY"
+    local given = explicit_args(input, region)
+    local args
+
+    -- 1) 타깃 결정: 지역·연령이 모두 주어졌으면 LLM 추론을 생략(결정적·빠름),
+    --    아니면 LLM 강제 툴 호출로 추론한 뒤 명시된 값으로 덮어쓴다.
+    if given.region and given.age_min and given.age_max then
+        args = given
+        args.gender = args.gender or "ANY"
+    else
+        local user_content = tool.buildUserMessage({
+            business = business,
+            region = region,
+            message = message,
+        })
+
+        local ai = llmClient.createClient("gemini")
+
+        local resp, err = ai:chat({
+            messages    = {
+                { role = "system", content = tool.SYSTEM_PROMPT },
+                { role = "user",   content = user_content },
+            },
+            tools       = tool.getTools(),
+            tool_choice = "required",
+        })
+
+        if not resp then return nil, err end
+        if resp.error then return nil, "LLM_ERROR:" .. (resp.error.message or "") end
+
+        local msg = resp.choices and resp.choices[1] and resp.choices[1].message
+        if not msg then return nil, "LLM_EMPTY" end
+
+        local call = tool.parseToolCall(msg)
+        if not call then return nil, "LLM_NO_TOOLCALL" end
+
+        local ok, decoded = pcall(cjson.decode, call["function"].arguments)
+        if not ok then return nil, "LLM_BAD_ARGS" end
+
+        args = decoded
+        for _, k in ipairs(ARG_KEYS) do
+            if given[k] ~= nil then args[k] = given[k] end
+        end
     end
-    local model = env.get("GROQ_MODEL", "llama-3.3-70b-versatile")
-
-    -- 1) LLM: 타깃 추론 → 강제 툴 호출
-    local resp, err = groq.chat({
-        model       = model,
-        messages    = {
-            { role = "system", content = SYSTEM_PROMPT },
-            { role = "user",   content = user_content },
-        },
-        tools       = TOOLS,
-        tool_choice = "required",
-    }, api_key)
-
-    if not resp then return nil, err end
-    if resp.error then return nil, "LLM_ERROR:" .. (resp.error.message or "") end
-
-    local msg = resp.choices and resp.choices[1] and resp.choices[1].message
-    if not msg then return nil, "LLM_EMPTY" end
-
-    local call = msg.tool_calls and msg.tool_calls[1] or parse_inline_call(msg.content)
-    if not call then return nil, "LLM_NO_TOOLCALL" end
-
-    local ok, args = pcall(cjson.decode, call["function"].arguments)
-    if not ok then return nil, "LLM_BAD_ARGS" end
 
     -- 2) 지역 → 좌표
     local lng, lat = geo.geocode(args.region or region)

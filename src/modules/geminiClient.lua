@@ -1,13 +1,16 @@
--- src/modules/groqClient.lua
--- Groq Chat Completions (OpenAI 호환) 호출.
+-- src/modules/geminiClient.lua
+-- Gemini Chat Completions (OpenAI 호환 엔드포인트) 호출.
+-- 요청/응답 스키마가 OpenAI 와 동일하므로 상위 계층(choices[1].message.tool_calls)은 그대로 사용.
 -- 블로킹 luasec 사용 (lapis cqueues 서버 루프 오염 방지)
 local https = require("ssl.https")
 local ltn12 = require("ltn12")
 local cjson = require("cjson")
 
-local ENDPOINT = "https://api.groq.com/openai/v1/chat/completions"
+local ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
 
 local M = {}
+
+M.ENDPOINT = ENDPOINT
 
 -- payload: { model, messages, tools, tool_choice }
 -- 성공: decoded(table), 실패: nil, err_key(string)

@@ -1,0 +1,2 @@
+2026/08/13 11:47:57 [emerg] 13#13: open() "/app/mime.types" failed (2: No such file or directory) in /app/nginx.conf.compiled:12
+2026/08/13 11:48:50 [alert] 13#13: lua_code_cache is off; this will hurt performance in /app/nginx.conf.compiled:19

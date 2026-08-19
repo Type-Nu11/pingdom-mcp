@@ -81,3 +81,32 @@ Async Worker
  ├──── S3
  ├──── FCM
  └──── Email Provider
+```
+
+## Docker
+
+간단한 개발용 Docker 환경을 추가했습니다. 로컬에 Lua/Luarocks가 없어도 컨테이너로 앱을 실행할 수 있습니다.
+
+빌드 및 실행:
+
+```bash
+docker-compose build --pull --no-cache
+docker-compose up
+```
+
+기본적으로 앱은 컨테이너 내부 8080 포트를 사용하며, 호스트의 8080으로 포워딩됩니다. Postgres는 `db` 서비스로 함께 올라옵니다.
+
+환경 변수는 루트의 `.env` 파일을 사용하세요. 예:
+
+```env
+# .env 예시
+PORT=8080
+DB_HOST=db
+DB_PORT=5432
+DB_USER=postgres
+DB_PASSWORD=postgres
+DB_NAME=pingdom_dev
+GEMINI_API_KEY=your_key_here
+GEMINI_MODEL=gemini-3.1-flash-lite
+```
+

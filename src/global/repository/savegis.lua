@@ -15,7 +15,7 @@ local function save_user_location(user_id, address, age)
         "ST_SetSRID(ST_MakePoint(?, ?), 4326)", lng, lat
       ))
     })
-  end
 end
+
 
 return save_user_location
