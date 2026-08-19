@@ -1,7 +1,7 @@
 -- 더미 데이터: 대구시 전역(8개 구·군) × 업종 5종, 약 2000건
 -- 업종 컬럼 추가 + 한 번에 클린 재실행
-ALTER TABLE locations ADD COLUMN IF NOT EXISTS business_type text;
-TRUNCATE locations RESTART IDENTITY;
+ALTER TABLE mcp_spatial_raw_data ADD COLUMN IF NOT EXISTS business_type text;
+TRUNCATE mcp_spatial_raw_data RESTART IDENTITY;
 
 WITH
 -- 설정: 구 좌표 배열 + 업종별 연령/남성비율 배열 (배열은 1-인덱스)
@@ -21,7 +21,7 @@ picks AS MATERIALIZED (
            floor(random() * 5)::int + 1 AS bi
     FROM generate_series(1, 2000) AS g
 )
-INSERT INTO locations (account_id, birth_year, gender, geom, created_at, business_type)
+INSERT INTO mcp_spatial_raw_data (account_id, birth_year, gender, geom, created_at, business_type)
 SELECT
     'dummy_' || p.g,
     2026 - (c.alo[p.bi] + floor(random() * (c.ahi[p.bi] - c.alo[p.bi] + 1)))::int,   -- 연령 → 출생연도
