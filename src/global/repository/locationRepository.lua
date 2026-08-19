@@ -10,7 +10,7 @@ function LocationRepository:save(data)
     end
 
     return db.query([[
-        INSERT INTO locations (account_id, birth_year, gender, geom, created_at)
+        INSERT INTO mcp_spatial_raw_data (account_id, birth_year, gender, geom, created_at)
         VALUES (?, ?, ?, ST_SetSRID(ST_MakePoint(?, ?), 4326), now())
         RETURNING id
     ]], data.account_id, tonumber(data.birth_year), data.gender, tonumber(data.lng), tonumber(data.lat))
@@ -42,7 +42,7 @@ function LocationRepository:findByFilters(gender, birth_year, created_at)
                ST_X(geom) AS lng,
                ST_Y(geom) AS lat,
                created_at
-        FROM locations
+        FROM mcp_spatial_raw_data
         WHERE ]] .. table.concat(where, " AND ")
 
     return db.query(sql, table.unpack(params))
@@ -64,7 +64,7 @@ function LocationRepository:findInRadius(center_lng, center_lat, radius_m)
             birth_year,
             gender,
             EXTRACT(HOUR FROM created_at) AS hour
-        FROM locations
+        FROM mcp_spatial_raw_data
         WHERE ST_DWithin(
             geom::geography,
             ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography,
