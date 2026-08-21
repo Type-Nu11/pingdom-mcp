@@ -1,8 +1,7 @@
 -- src/domain/recommendation/service/recommendationService.lua
--- 업종 + 지역 → Gemini(함수콜)로 "타깃 인구통계"만 추론 → 반경 내 포인트 조회 → geohash 모듈로 셀 집계
+-- 업종 + 지역 → Gemini(함수콜)로 "타깃 인구통계"만 추론 → DB에서 geohash 셀 집계
 -- → 점수화·랭킹·역지오코딩은 코드에서 결정적으로 처리(한글 깨짐/환각 방지) → 구조화 JSON 반환
 local geo          = require("src.modules.GeoEncoder")
-local geohash      = require("src.modules.geohash")
 local locationRepo = require("src.global.repository.locationRepository")
 local tool         = require("src.domain.recommendation.tool.recommendationTool")
 local llmClient    = require("src.ai.llmClient")
@@ -183,15 +182,13 @@ function RecommendationService.recommend(input)
         gender         = args.gender or "ANY",
     }
 
-    -- 3) 반경 내 포인트 조회 → geohash 모듈로 셀 집계 (결과 비면 반경 넓혀 1회 재검색)
+    -- 3) DB에서 반경 내 포인트를 geohash 셀로 집계 (결과 비면 반경 넓혀 1회 재검색)
     local function aggregate(radius)
-        local points, perr = locationRepo:findInRadius(lng, lat, radius)
+        local rows, perr = locationRepo:aggregateInRadius(
+            lng, lat, radius, by_min, by_max, args.gender, 7
+        )
         if perr then return nil, perr end
-        return geohash.aggregate(points or {}, {
-            by_min = by_min,
-            by_max = by_max,
-            gender = args.gender,
-        })
+        return rows or {}
     end
 
     local radius  = tonumber(args.radius_m) or 1500
