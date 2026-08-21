@@ -75,4 +75,50 @@ function LocationRepository:findInRadius(center_lng, center_lat, radius_m)
     return db.query(sql, tonumber(center_lng), tonumber(center_lat), radius)
 end
 
+-- 입지 추천용 공간 집계. 원시 포인트를 애플리케이션으로 전송하지 않고 DB에서 geohash 셀로 집계한다.
+function LocationRepository:aggregateInRadius(
+    center_lng, center_lat, radius_m, birth_year_min, birth_year_max, gender, precision
+)
+    if not (center_lng and center_lat) then
+        return nil, "INVALID_INPUT"
+    end
+
+    local radius = tonumber(radius_m) or 1500
+    local geohash_precision = tonumber(precision) or 7
+    local by_min = tonumber(birth_year_min)
+    local by_max = tonumber(birth_year_max)
+
+    local sql = [[
+        SELECT
+            ST_GeoHash(geom, ?) AS cell,
+            COUNT(*) AS total_foot,
+            COUNT(*) FILTER (
+                WHERE ? IS NOT NULL
+                  AND ? IS NOT NULL
+                  AND birth_year BETWEEN ? AND ?
+            ) AS age_match,
+            COUNT(*) FILTER (
+                WHERE COALESCE(?, 'ANY') = 'ANY' OR gender = ?
+            ) AS gender_match,
+            ROUND(AVG(EXTRACT(HOUR FROM created_at))::numeric, 1) AS avg_hour,
+            AVG(ST_Y(geom)) AS lat,
+            AVG(ST_X(geom)) AS lng
+        FROM mcp_spatial_raw_data
+        WHERE ST_DWithin(
+            geom::geography,
+            ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography,
+            ?
+        )
+        GROUP BY 1
+    ]]
+
+    return db.query(
+        sql,
+        geohash_precision,
+        by_min, by_max, by_min, by_max,
+        gender, gender,
+        tonumber(center_lng), tonumber(center_lat), radius
+    )
+end
+
 return LocationRepository
