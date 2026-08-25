@@ -182,7 +182,8 @@ function RecommendationService.recommend(input)
         gender         = args.gender or "ANY",
     }
 
-    -- 3) DB에서 반경 내 포인트를 geohash 셀로 집계 (결과 비면 반경 넓혀 1회 재검색)
+    -- 3) DB에서 반경 내 포인트를 geohash 셀로 집계한다.
+    --    동 단위 입력은 1.5km, 6km에 데이터가 없을 수 있어 마지막으로 생활권 수준인 15km까지 확장한다.
     local function aggregate(radius)
         local rows, perr = locationRepo:aggregateInRadius(
             lng, lat, radius, by_min, by_max, args.gender, 7
@@ -196,11 +197,15 @@ function RecommendationService.recommend(input)
     if rerr then return nil, rerr end
 
     local widened = false
-    if not rows or #rows == 0 then
-        radius  = math.max(radius * 4, 5000)
-        widened = true
-        rows, rerr = aggregate(radius)
-        if rerr then return nil, rerr end
+    local fallback_radii = { math.max(radius * 4, 5000), 15000 }
+    for _, fallback_radius in ipairs(fallback_radii) do
+        if rows and #rows > 0 then break end
+        if fallback_radius > radius then
+            radius = fallback_radius
+            widened = true
+            rows, rerr = aggregate(radius)
+            if rerr then return nil, rerr end
+        end
     end
 
     if not rows or #rows == 0 then
