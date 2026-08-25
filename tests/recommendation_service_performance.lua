@@ -23,7 +23,7 @@ package.loaded["src.global.repository.locationRepository"] = {
     aggregateInRadius = function(_, lng, lat, radius, by_min, by_max, gender, precision)
         aggregate_calls = aggregate_calls + 1
         assert(lng == 128.5955669 and lat == 35.9235922)
-        local expected_radius = aggregate_mode == "empty" and (radius == 1500 or radius == 6000)
+        local expected_radius = aggregate_mode == "empty" and (radius == 1500 or radius == 6000 or radius == 15000)
             or radius == 1500
         assert(expected_radius and by_min == 1987 and by_max == 2006)
         assert(gender == "ANY" and precision == 7)
@@ -63,7 +63,7 @@ local empty_result, empty_error = service.recommend({
 })
 
 assert(not empty_error, empty_error)
-assert(aggregate_calls == 2, "empty results should execute the initial and widened queries")
+assert(aggregate_calls == 3, "empty results should execute the initial query and both bounded fallback queries")
 assert(reverse_calls == 0, "empty results should not execute reverse geocoding")
 assert(empty_result.searched_radius_m == nil, "empty result should preserve the existing response contract")
 assert(#empty_result.recommendations == 0)
