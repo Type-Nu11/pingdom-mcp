@@ -16,8 +16,9 @@ MCPServer.SUPPORTED_PROTOCOL_VERSIONS = {
     ["2024-11-05"] = true,
 }
 
+-- Gemini Remote MCP 안내: 서버 이름에 '-' 를 쓰지 말고 snake_case 를 쓸 것.
 MCPServer.SERVER_INFO = {
-    name    = "pingdom-mcp-server",
+    name    = "pingdom_mcp_server",
     version = "0.1.0",
 }
 

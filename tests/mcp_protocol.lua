@@ -34,7 +34,7 @@ local init = server.handleRequest({
     params = { protocolVersion = "2025-03-26" },
 })
 check("initialize 는 요청한 버전으로 협상한다", init.result.protocolVersion == "2025-03-26")
-check("initialize 는 serverInfo 를 담는다", init.result.serverInfo.name == "pingdom-mcp-server")
+check("initialize 는 serverInfo 를 담는다", init.result.serverInfo.name == "pingdom_mcp_server")
 
 -- 모르는 버전이면 서버의 최신 버전으로 응답
 local init2 = server.handleRequest({

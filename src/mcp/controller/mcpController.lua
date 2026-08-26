@@ -8,12 +8,25 @@ local json_params = lapis_app.json_params
 local respond_to  = lapis_app.respond_to
 local MCPServer   = require("src.mcp.server")
 local sessionStore = require("src.mcp.sessionStore")
+local env          = require("src.global.config.env")
 
 local SESSION_HEADER  = "mcp-session-id"
 local PROTOCOL_HEADER = "mcp-protocol-version"
 
 -- 세션 헤더가 없는 구(2025-03-26) 클라이언트를 위한 기본값
 local DEFAULT_PROTOCOL_VERSION = "2025-03-26"
+
+-- MCP_AUTH_TOKEN 이 설정돼 있으면 Authorization: Bearer <token> 을 요구한다.
+-- Gemini Remote MCP 는 tools[].headers 로 이 값을 실어 보낸다.
+-- 공개 URL 로 노출되는 순간 무인증이면 누구나 DB/LLM 을 호출할 수 있으므로 운영에서는 필수.
+local function authorized(self)
+    local expected = env.get("MCP_AUTH_TOKEN")
+    if not expected or expected == "" then
+        return true   -- 미설정 = 로컬 개발
+    end
+    local header = self.req.headers["authorization"]
+    return header == "Bearer " .. expected
+end
 
 local function jsonrpc_error(status, code, message, id)
     return {
@@ -40,6 +53,10 @@ local function contains_initialize(body)
 end
 
 local function handle_post(self)
+    if not authorized(self) then
+        return jsonrpc_error(401, -32001, "Unauthorized")
+    end
+
     local body = self.params or {}
 
     -- json_params 는 파싱에 실패하면 빈 테이블을 남긴다.
@@ -56,22 +73,23 @@ local function handle_post(self)
         -- 새 세션 발급. 클라이언트는 이후 요청에 이 값을 실어 보내야 한다.
         issued_session_id = sessionStore.create(now)
     else
+        -- 세션은 스펙상 선택 사항이다. 헤더를 보내오면 검증하고, 없으면 무상태로 처리한다.
+        -- (Gemini Remote MCP 처럼 세션을 되돌려주지 않는 클라이언트도 붙을 수 있게)
         local session_id = self.req.headers[SESSION_HEADER]
-        if not session_id then
-            return jsonrpc_error(400, -32600, "Missing Mcp-Session-Id header")
-        end
-        -- 404 를 받으면 클라이언트는 새 세션으로 다시 initialize 한다.
-        local session = sessionStore.touch(session_id, now)
-        if not session then
-            return jsonrpc_error(404, -32001, "Session not found")
+        if session_id then
+            -- 404 를 받으면 클라이언트는 새 세션으로 다시 initialize 한다.
+            local session = sessionStore.touch(session_id, now)
+            if not session then
+                return jsonrpc_error(404, -32001, "Session not found")
+            end
+            session.protocol_version = self.req.headers[PROTOCOL_HEADER]
         end
 
         -- 2025-06-18 부터 클라이언트가 협상된 버전을 헤더로 실어 보낸다.
-        local version = self.req.headers[PROTOCOL_HEADER] or DEFAULT_PROTOCOL_VERSION
-        if not MCPServer.SUPPORTED_PROTOCOL_VERSIONS[version] then
+        local version = self.req.headers[PROTOCOL_HEADER]
+        if version and not MCPServer.SUPPORTED_PROTOCOL_VERSIONS[version] then
             return jsonrpc_error(400, -32600, "Unsupported MCP-Protocol-Version: " .. tostring(version))
         end
-        session.protocol_version = version
     end
 
     local response = MCPServer.handleMessage(body)
@@ -95,6 +113,10 @@ local function handle_get()
 end
 
 local function handle_delete(self)
+    if not authorized(self) then
+        return jsonrpc_error(401, -32001, "Unauthorized")
+    end
+
     local session_id = self.req.headers[SESSION_HEADER]
     if not session_id then
         return jsonrpc_error(400, -32600, "Missing Mcp-Session-Id header")
