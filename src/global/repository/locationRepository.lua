@@ -9,11 +9,20 @@ function LocationRepository:save(data)
         return nil, "INVALID_INPUT"
     end
 
+    local lng = tonumber(data.lng)
+    local lat = tonumber(data.lat)
+    -- nil 을 그대로 넘기면 Lua 가변인자에서 잘려 interpolate_query 가 실패한다. NULL 로 넘긴다.
+    local observed_at = data.observed_at or db.NULL
+
+    -- geom 이 공간 인덱스의 기준이고, longitude/latitude 는 같은 좌표를 그대로 보관하는 편의 컬럼이다.
+    -- observed_at 은 실제 관측 시각(미지정이면 적재 시각과 동일).
     return db.query([[
-        INSERT INTO mcp_spatial_raw_data (account_id, birth_year, gender, geom, created_at)
-        VALUES (?, ?, ?, ST_SetSRID(ST_MakePoint(?, ?), 4326), now())
+        INSERT INTO mcp_spatial_raw_data
+            (account_id, birth_year, gender, longitude, latitude, geom, created_at, observed_at)
+        VALUES (?, ?, ?, ?, ?, ST_SetSRID(ST_MakePoint(?, ?), 4326), now(), COALESCE(?, now()))
         RETURNING id
-    ]], data.account_id, tonumber(data.birth_year), data.gender, tonumber(data.lng), tonumber(data.lat))
+    ]], data.account_id, tonumber(data.birth_year), data.gender,
+        lng, lat, lng, lat, observed_at)
 end
 
 -- 조회
@@ -39,9 +48,10 @@ function LocationRepository:findByFilters(gender, birth_year, created_at)
 
     local sql = [[
         SELECT account_id, birth_year, gender,
-               ST_X(geom) AS lng,
-               ST_Y(geom) AS lat,
-               created_at
+               COALESCE(longitude, ST_X(geom)) AS lng,
+               COALESCE(latitude,  ST_Y(geom)) AS lat,
+               created_at,
+               observed_at
         FROM mcp_spatial_raw_data
         WHERE ]] .. table.concat(where, " AND ")
 
@@ -59,11 +69,12 @@ function LocationRepository:findInRadius(center_lng, center_lat, radius_m)
 
     local sql = [[
         SELECT
-            ST_X(geom)                    AS lng,
-            ST_Y(geom)                    AS lat,
+            COALESCE(longitude, ST_X(geom)) AS lng,
+            COALESCE(latitude,  ST_Y(geom)) AS lat,
             birth_year,
             gender,
-            EXTRACT(HOUR FROM created_at) AS hour
+            -- 활동 시각은 관측 시각 기준. observed_at 이 비면 적재 시각으로 대체한다.
+            EXTRACT(HOUR FROM COALESCE(observed_at, created_at)) AS hour
         FROM mcp_spatial_raw_data
         WHERE ST_DWithin(
             geom::geography,
@@ -100,9 +111,9 @@ function LocationRepository:aggregateInRadius(
             COUNT(*) FILTER (
                 WHERE COALESCE(?, 'ANY') = 'ANY' OR gender = ?
             ) AS gender_match,
-            ROUND(AVG(EXTRACT(HOUR FROM created_at))::numeric, 1) AS avg_hour,
-            AVG(ST_Y(geom)) AS lat,
-            AVG(ST_X(geom)) AS lng
+            ROUND(AVG(EXTRACT(HOUR FROM COALESCE(observed_at, created_at)))::numeric, 1) AS avg_hour,
+            AVG(COALESCE(latitude,  ST_Y(geom))) AS lat,
+            AVG(COALESCE(longitude, ST_X(geom))) AS lng
         FROM mcp_spatial_raw_data
         WHERE ST_DWithin(
             geom::geography,

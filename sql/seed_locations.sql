@@ -20,16 +20,25 @@ picks AS MATERIALIZED (
            floor(random() * 8)::int + 1 AS di,
            floor(random() * 5)::int + 1 AS bi
     FROM generate_series(1, 2000) AS g
+),
+-- 좌표를 한 번만 뽑아 longitude/latitude/geom 이 서로 어긋나지 않게 한다.
+coords AS MATERIALIZED (
+    SELECT p.g, p.di, p.bi,
+           c.dlng[p.di] + (random() - 0.5) * 0.03 AS lng,   -- 구 내 약 ±1.3km 분산
+           c.dlat[p.di] + (random() - 0.5) * 0.03 AS lat,
+           now() - (random() * interval '30 days')  AS observed_at
+    FROM picks p CROSS JOIN cfg c
 )
-INSERT INTO mcp_spatial_raw_data (account_id, birth_year, gender, geom, created_at, business_type)
+INSERT INTO mcp_spatial_raw_data
+    (account_id, birth_year, gender, longitude, latitude, geom, created_at, observed_at, business_type)
 SELECT
-    'dummy_' || p.g,
-    2026 - (c.alo[p.bi] + floor(random() * (c.ahi[p.bi] - c.alo[p.bi] + 1)))::int,   -- 연령 → 출생연도
-    CASE WHEN random() < c.mr[p.bi] THEN 'M' ELSE 'F' END,
-    ST_SetSRID(ST_MakePoint(
-        c.dlng[p.di] + (random() - 0.5) * 0.03,   -- 구 내 약 ±1.3km 분산
-        c.dlat[p.di] + (random() - 0.5) * 0.03
-    ), 4326),
-    now() - (random() * interval '30 days'),
-    c.btype[p.bi]
-FROM picks p CROSS JOIN cfg c;
+    'dummy_' || x.g,
+    2026 - (c.alo[x.bi] + floor(random() * (c.ahi[x.bi] - c.alo[x.bi] + 1)))::int,   -- 연령 → 출생연도
+    CASE WHEN random() < c.mr[x.bi] THEN 'M' ELSE 'F' END,
+    x.lng,
+    x.lat,
+    ST_SetSRID(ST_MakePoint(x.lng, x.lat), 4326),
+    now(),            -- 적재 시각
+    x.observed_at,    -- 관측 시각(최근 30일 내)
+    c.btype[x.bi]
+FROM coords x CROSS JOIN cfg c;

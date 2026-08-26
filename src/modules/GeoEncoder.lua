@@ -69,7 +69,8 @@ end
 
 -- 주소 → (lng, lat)
 function M.geocode(address)
-    if not address or address == "" then return nil end
+    -- 호출부에서 숫자/테이블이 흘러들어와도 문자열 메서드에서 터지지 않게 막는다.
+    if type(address) ~= "string" or address == "" then return nil end
     for _, candidate in ipairs(search_candidates(address)) do
         local data = request_json(
             "https://nominatim.openstreetmap.org/search?format=json&limit=1&accept-language=ko&q="
@@ -83,6 +84,7 @@ end
 
 -- (lat, lng) → 한국어 주소 문자열
 function M.reverse(lat, lng)
+    lat, lng = tonumber(lat), tonumber(lng)
     if not lat or not lng then return nil end
     local data = request_json(string.format(
         "https://nominatim.openstreetmap.org/reverse?format=json&accept-language=ko&lat=%s&lon=%s",
