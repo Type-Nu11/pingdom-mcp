@@ -90,6 +90,29 @@ local RecommendationService = {}
 -- 호출자가 직접 지정한 타깃 조건. 지정된 값은 LLM 추론보다 항상 우선한다.
 local ARG_KEYS = { "region", "age_min", "age_max", "gender", "radius_m" }
 
+-- REST/LLM 어느 쪽에서 와도 텍스트 필드는 문자열로 맞춘다.
+-- (숫자는 문자열로, 그 외 타입과 공백뿐인 값은 없는 것으로 취급)
+local function as_text(v)
+    if type(v) == "string" then
+        v = v:match("^%s*(.-)%s*$")
+        if v ~= "" then return v end
+        return nil
+    end
+    if type(v) == "number" then return tostring(v) end
+    return nil
+end
+
+local MIN_AGE, MAX_AGE = 0, 120
+
+local function clamp_age(v)
+    v = tonumber(v)
+    if not v then return nil end
+    v = math.floor(v)
+    if v < MIN_AGE then return MIN_AGE end
+    if v > MAX_AGE then return MAX_AGE end
+    return v
+end
+
 local function normalize_gender(g)
     if type(g) ~= "string" or g == "" then return nil end
     g = g:upper()
@@ -100,8 +123,8 @@ end
 local function explicit_args(input, region)
     return {
         region   = region,
-        age_min  = tonumber(input.age_min),
-        age_max  = tonumber(input.age_max),
+        age_min  = clamp_age(input.age_min),
+        age_max  = clamp_age(input.age_max),
         gender   = normalize_gender(input.gender),
         radius_m = tonumber(input.radius_m),
     }
@@ -110,9 +133,9 @@ end
 -- input: { message=자유질문 } 또는 { business=업종, region=지역 }
 --        MCP 툴 경로처럼 { region, age_min, age_max, gender, radius_m } 를 직접 넘길 수도 있다.
 function RecommendationService.recommend(input)
-    local business = input.business or input["업종"]
-    local region   = input.region   or input["지역"]
-    local message  = input.message  or input["질문"]
+    local business = as_text(input.business or input["업종"])
+    local region   = as_text(input.region   or input["지역"])
+    local message  = as_text(input.message  or input["질문"])
     if not message and not (business or region) then
         return nil, "INVALID_INPUT"
     end
@@ -162,12 +185,12 @@ function RecommendationService.recommend(input)
     end
 
     -- 2) 지역 → 좌표
-    local lng, lat = geo.geocode(args.region or region)
+    local lng, lat = geo.geocode(as_text(args.region) or region)
     if not lng then return nil, "GEOCODE_FAILED" end
 
     -- 나이 → birth_year 변환은 코드에서 (LLM 산수 오류 방지). 순서 뒤집힘도 보정.
-    local age_min = tonumber(args.age_min); if age_min then age_min = math.floor(age_min) end
-    local age_max = tonumber(args.age_max); if age_max then age_max = math.floor(age_max) end
+    local age_min = clamp_age(args.age_min)   -- LLM 이 추론한 값도 같은 범위로 맞춘다
+    local age_max = clamp_age(args.age_max)
     if age_min and age_max and age_min > age_max then age_min, age_max = age_max, age_min end
     local by_min = age_max and (THIS_YEAR - age_max) or nil   -- 고령 → 작은 연도
     local by_max = age_min and (THIS_YEAR - age_min) or nil   -- 연소 → 큰 연도
