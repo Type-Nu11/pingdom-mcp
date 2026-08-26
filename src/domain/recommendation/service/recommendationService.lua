@@ -63,9 +63,6 @@ local function build_answer(target, recs, opts)
     local g = (target.gender == "M" and "남성")
            or (target.gender == "F" and "여성")
            or "성별무관"
-    if #recs == 0 then
-        return "조건에 맞는 유동인구 데이터가 충분하지 않습니다. 지역이나 연령 범위를 넓혀보세요."
-    end
     local lines = {}
     lines[#lines + 1] = string.format(
         "%s %s~%s세 / %s 기준으로 유동인구가 많은 추천 입지 Top%d입니다.",
@@ -102,6 +99,15 @@ local function as_text(v)
     return nil
 end
 
+-- 지역명은 최소한 글자를 포함해야 한다. 숫자·기호만 있는 값(예: 12345)은
+-- 지오코딩에 넘기면 엉뚱한 국내 지점에 매칭되므로 아예 거른다.
+local function as_region(v)
+    v = as_text(v)
+    if not v then return nil end
+    if v:match("%a") or v:match("[\128-\255]") then return v end   -- 영문자 또는 한글(비ASCII)
+    return nil
+end
+
 local MIN_AGE, MAX_AGE = 0, 120
 
 local function clamp_age(v)
@@ -134,7 +140,7 @@ end
 --        MCP 툴 경로처럼 { region, age_min, age_max, gender, radius_m } 를 직접 넘길 수도 있다.
 function RecommendationService.recommend(input)
     local business = as_text(input.business or input["업종"])
-    local region   = as_text(input.region   or input["지역"])
+    local region   = as_region(input.region or input["지역"])
     local message  = as_text(input.message  or input["질문"])
     if not message and not (business or region) then
         return nil, "INVALID_INPUT"
@@ -185,7 +191,7 @@ function RecommendationService.recommend(input)
     end
 
     -- 2) 지역 → 좌표
-    local lng, lat = geo.geocode(as_text(args.region) or region)
+    local lng, lat = geo.geocode(as_region(args.region) or region)
     if not lng then return nil, "GEOCODE_FAILED" end
 
     -- 나이 → birth_year 변환은 코드에서 (LLM 산수 오류 방지). 순서 뒤집힘도 보정.
@@ -231,17 +237,17 @@ function RecommendationService.recommend(input)
         end
     end
 
+    -- 빈 배열을 성공으로 돌려주면 호출한 AI 가 "결과 없음"과 "성공"을 구분하지 못한다.
+    -- 데이터가 없으면 tool 에러로 알린다.
     if not rows or #rows == 0 then
-        return {
-            answer          = build_answer(target, {}),
-            target          = target,
-            center          = { lat = lat, lng = lng },
-            recommendations = {},
-        }
+        return nil, "NO_DATA_IN_REGION"
     end
 
     -- 4) 점수화·랭킹 (코드)
     local ranked = score_and_rank(rows)
+    if #ranked == 0 then
+        return nil, "NO_DATA_IN_REGION"
+    end
 
     -- 5) 상위 N 역지오코딩 (좌표 → 한국어 주소)
     for _, c in ipairs(ranked) do
