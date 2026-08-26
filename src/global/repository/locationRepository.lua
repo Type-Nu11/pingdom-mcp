@@ -1,5 +1,6 @@
 local db = require("lapis.db")
 local BaseRepository = require("src.modules.baseRepository")
+local unpack = table.unpack or unpack
 
 local LocationRepository = setmetatable({}, { __index = BaseRepository })
 LocationRepository.__index = LocationRepository
@@ -45,7 +46,7 @@ function LocationRepository:findByFilters(gender, birth_year, created_at)
         FROM mcp_spatial_raw_data
         WHERE ]] .. table.concat(where, " AND ")
 
-    return db.query(sql, table.unpack(params))
+    return db.query(sql, unpack(params))
 end
 
 -- 입지 추천: 중심좌표 반경 내 원시 포인트 반환. (geohash 셀 묶기/집계는 geohash 모듈이 담당)

@@ -140,21 +140,18 @@ end
 function MCPServer.serveStdio()
     while true do
         local line = io.stdin:read("*l")
-        if not line or line == "" then
-            if not line then
-                break
+        if not line then
+            break
+        end
+
+        if line ~= "" then
+            local ok, request = pcall(cjson.decode, line)
+            if ok and request then
+                local response = MCPServer.handleRequest(request)
+                io.stdout:write(cjson.encode(response) .. "\n")
+                io.stdout:flush()
             end
-            goto continue
         end
-
-        local ok, request = pcall(cjson.decode, line)
-        if ok and request then
-            local response = MCPServer.handleRequest(request)
-            io.stdout:write(cjson.encode(response) .. "\n")
-            io.stdout:flush()
-        end
-
-        ::continue::
     end
 end
 
