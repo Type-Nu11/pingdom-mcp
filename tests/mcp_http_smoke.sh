@@ -63,7 +63,8 @@ check "ping 200" "200" "$code"
 check "ping 결과는 빈 객체" "{}" "$(python3 -c 'import json;print(json.dumps(json.load(open("/tmp/mcp_b"))["result"]))' 2>/dev/null)"
 
 # 6) 세션 없는 요청 → 400 / 모르는 세션 → 404
-check "세션 헤더 누락 400" "400" "$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$MCP" -H "$CT" -H "$ACCEPT" \
+# 세션은 선택 사항 — 헤더 없이도 동작해야 한다 (Gemini Remote MCP 등)
+check "세션 헤더 없이도 200" "200" "$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$MCP" -H "$CT" -H "$ACCEPT" \
     -d '{"jsonrpc":"2.0","id":5,"method":"tools/list"}')"
 check "모르는 세션 404" "404" "$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$MCP" -H "$CT" -H "$ACCEPT" \
     -H 'Mcp-Session-Id: deadbeef' -d '{"jsonrpc":"2.0","id":6,"method":"tools/list"}')"

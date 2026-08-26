@@ -17,5 +17,6 @@ return {
     LLM_EMPTY          = { status = 502, message = "Empty LLM response" },
     LLM_NO_TOOLCALL    = { status = 502, message = "LLM did not call the tool" },
     LLM_BAD_ARGS       = { status = 502, message = "LLM tool arguments invalid" },
-    GEOCODE_FAILED     = { status = 422, message = "Failed to geocode region" },
+    GEOCODE_FAILED     = { status = 422, message = "Failed to geocode region (Korean addresses only)" },
+    NO_DATA_IN_REGION  = { status = 404, message = "No population data within the requested area" },
 }
