@@ -9,6 +9,7 @@ local cjson        = require("cjson")
 
 local THIS_YEAR = 2026
 local TOP_N     = 5
+local MAX_REVERSE_GEOCODES = 1
 
 -- stdout는 stdio MCP 프로토콜 응답에 사용될 수 있으므로 운영 진단 로그는 stderr만 사용한다.
 local function debug_log(event, fields)
@@ -245,9 +246,14 @@ function RecommendationService.recommend(input)
     local ranked = score_and_rank(rows)
     debug_log("ranking_completed", { cell_count = #rows, recommendation_count = #ranked, searched_radius_m = radius })
 
-    -- 5) 상위 N 역지오코딩 (좌표 → 한국어 주소)
-    for _, c in ipairs(ranked) do
-        c.address = geo.reverse(c.lat, c.lng) or "주소 미상"
+    -- 5) 외부 역지오코딩은 1위만 수행한다. Remote MCP 호출 제한 안에서 결과를 반환하기 위해
+    --    나머지 후보는 요청 지역 기준의 근접 후보임을 명시한다.
+    for index, c in ipairs(ranked) do
+        if index <= MAX_REVERSE_GEOCODES then
+            c.address = geo.reverse(c.lat, c.lng) or "주소 미상"
+        else
+            c.address = (target.region or "요청 지역") .. " 인근 후보"
+        end
     end
 
     debug_log("response_completed", { recommendation_count = #ranked, searched_radius_m = radius })

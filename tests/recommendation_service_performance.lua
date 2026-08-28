@@ -6,6 +6,14 @@ local function aggregated_row()
     return {
         { cell = "wydj", total_foot = 100, age_match = 70, gender_match = 100,
           avg_hour = 18.5, lat = 35.9236, lng = 128.5956 },
+        { cell = "wydk", total_foot = 90, age_match = 65, gender_match = 90,
+          avg_hour = 18.0, lat = 35.9237, lng = 128.5957 },
+        { cell = "wydm", total_foot = 80, age_match = 60, gender_match = 80,
+          avg_hour = 17.5, lat = 35.9238, lng = 128.5958 },
+        { cell = "wydn", total_foot = 70, age_match = 55, gender_match = 70,
+          avg_hour = 17.0, lat = 35.9239, lng = 128.5959 },
+        { cell = "wydp", total_foot = 60, age_match = 50, gender_match = 60,
+          avg_hour = 16.5, lat = 35.9240, lng = 128.5960 },
     }
 end
 
@@ -46,9 +54,10 @@ local result, err = service.recommend({
 
 assert(not err, err)
 assert(aggregate_calls == 1, "non-empty results should execute one aggregate query")
-assert(reverse_calls == 1, "one ranked result should execute one reverse geocode")
-assert(#result.recommendations == 1)
+assert(reverse_calls == 1, "only the top-ranked result should execute reverse geocoding")
+assert(#result.recommendations == 5)
 assert(result.recommendations[1].address == "대구광역시 북구 서변동")
+assert(result.recommendations[2].address == "대구광역시 북구 서변동 인근 후보")
 
 aggregate_mode = "empty"
 aggregate_calls = 0
