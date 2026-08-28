@@ -22,3 +22,8 @@ CREATE INDEX IF NOT EXISTS mcp_spatial_raw_data_geom_idx
 -- 입지 반경 조회 시 위·경도 사각 범위 선필터에 사용하는 복합 인덱스
 CREATE INDEX IF NOT EXISTS mcp_spatial_raw_data_latitude_longitude_idx
     ON mcp_spatial_raw_data (latitude, longitude);
+
+-- 집계에 필요한 컬럼을 포함해 대규모 원본 테이블의 heap 접근을 줄인다.
+CREATE INDEX IF NOT EXISTS mcp_spatial_raw_data_location_aggregate_covering_idx
+    ON mcp_spatial_raw_data (latitude, longitude)
+    INCLUDE (birth_year, gender, observed_at, created_at);
