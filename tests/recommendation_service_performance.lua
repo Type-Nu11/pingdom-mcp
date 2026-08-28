@@ -71,10 +71,9 @@ local empty_result, empty_error = service.recommend({
     radius_m = 1500,
 })
 
-assert(not empty_error, empty_error)
+assert(empty_result == nil)
+assert(empty_error == "NO_DATA_IN_REGION", "empty results should return an explicit no-data error")
 assert(aggregate_calls == 3, "empty results should execute the initial query and both bounded fallback queries")
 assert(reverse_calls == 0, "empty results should not execute reverse geocoding")
-assert(empty_result.searched_radius_m == nil, "empty result should preserve the existing response contract")
-assert(#empty_result.recommendations == 0)
 
 print("Recommendation service performance contract OK")

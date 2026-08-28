@@ -1,5 +1,6 @@
 *.env
 .env
-config.lua
 src/global/modules/*
-src/global/config/*
+
+# config.lua / src/global/config/env.lua 는 시크릿이 아니라 env 변수를 읽는 코드이므로 추적한다.
+# 실제 값은 .env 에만 둔다.

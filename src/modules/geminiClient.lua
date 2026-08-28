@@ -40,6 +40,13 @@ function M.chat(payload, api_key)
         return nil, "LLM_BAD_JSON"
     end
 
+    -- 이 엔드포인트의 에러 본문은 [{"error":{...}}] 처럼 배열로 감싸여 온다.
+    -- 호출부가 resp.error 로 판별할 수 있게 벗겨서 넘긴다.
+    if type(decoded) == "table" and decoded.error == nil
+        and type(decoded[1]) == "table" and decoded[1].error then
+        return decoded[1]
+    end
+
     return decoded
 end
 
