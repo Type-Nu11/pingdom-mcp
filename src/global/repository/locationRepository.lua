@@ -125,8 +125,8 @@ function LocationRepository:aggregateInRadius(
                 WHERE COALESCE(?, 'ANY') = 'ANY' OR gender = ?
             ) AS gender_match,
             ROUND(AVG(EXTRACT(HOUR FROM COALESCE(observed_at, created_at)))::numeric, 1) AS avg_hour,
-            AVG(COALESCE(latitude,  ST_Y(geom))) AS lat,
-            AVG(COALESCE(longitude, ST_X(geom))) AS lng
+            AVG(latitude) AS lat,
+            AVG(longitude) AS lng
         FROM mcp_spatial_raw_data
         WHERE latitude BETWEEN ? AND ?
           AND longitude BETWEEN ? AND ?
