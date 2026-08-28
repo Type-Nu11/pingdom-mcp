@@ -18,3 +18,7 @@ CREATE TABLE IF NOT EXISTS mcp_spatial_raw_data (
 -- ST_DWithin 반경 검색용
 CREATE INDEX IF NOT EXISTS mcp_spatial_raw_data_geom_idx
     ON mcp_spatial_raw_data USING GIST (geom);
+
+-- 입지 반경 조회 시 위·경도 사각 범위 선필터에 사용하는 복합 인덱스
+CREATE INDEX IF NOT EXISTS mcp_spatial_raw_data_latitude_longitude_idx
+    ON mcp_spatial_raw_data (latitude, longitude);
