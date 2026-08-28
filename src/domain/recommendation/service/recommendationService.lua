@@ -9,6 +9,13 @@ local cjson        = require("cjson")
 
 local THIS_YEAR = 2026
 local TOP_N     = 5
+local MAX_REVERSE_GEOCODES = 1
+
+-- stdout는 stdio MCP 프로토콜 응답에 사용될 수 있으므로 운영 진단 로그는 stderr만 사용한다.
+local function debug_log(event, fields)
+    local ok, encoded = pcall(cjson.encode, fields or {})
+    io.stderr:write(string.format("[location-analysis] event=%s data=%s\n", event, ok and encoded or "{}"))
+end
 
 -- 후보 셀들을 점수화 후 상위 TOP_N 반환 (min-max 정규화)
 local function score_and_rank(rows)
@@ -143,8 +150,16 @@ function RecommendationService.recommend(input)
     local region   = as_region(input.region or input["지역"])
     local message  = as_text(input.message  or input["질문"])
     if not message and not (business or region) then
+        debug_log("invalid_input", { has_business = business ~= nil, has_region = region ~= nil })
         return nil, "INVALID_INPUT"
     end
+
+    debug_log("request_received", {
+        has_business = business ~= nil,
+        region = region,
+        has_explicit_age = input.age_min ~= nil and input.age_max ~= nil,
+        requested_radius_m = input.radius_m,
+    })
 
     local given = explicit_args(input, region)
     local args
@@ -191,8 +206,13 @@ function RecommendationService.recommend(input)
     end
 
     -- 2) 지역 → 좌표
-    local lng, lat = geo.geocode(as_region(args.region) or region)
-    if not lng then return nil, "GEOCODE_FAILED" end
+    local query_region = as_region(args.region) or region
+    local lng, lat = geo.geocode(query_region)
+    if not lng then
+        debug_log("geocode_failed", { region = query_region })
+        return nil, "GEOCODE_FAILED"
+    end
+    debug_log("geocode_succeeded", { lng = lng, lat = lat })
 
     -- 나이 → birth_year 변환은 코드에서 (LLM 산수 오류 방지). 순서 뒤집힘도 보정.
     local age_min = clamp_age(args.age_min)   -- LLM 이 추론한 값도 같은 범위로 맞춘다
@@ -217,8 +237,13 @@ function RecommendationService.recommend(input)
         local rows, perr = locationRepo:aggregateInRadius(
             lng, lat, radius, by_min, by_max, args.gender, 7
         )
-        if perr then return nil, perr end
-        return rows or {}
+        if perr then
+            debug_log("database_aggregate_failed", { radius_m = radius, error = perr })
+            return nil, perr
+        end
+        local result = rows or {}
+        debug_log("database_aggregate_completed", { radius_m = radius, cell_count = #result })
+        return result
     end
 
     local radius  = tonumber(args.radius_m) or 1500
@@ -240,19 +265,29 @@ function RecommendationService.recommend(input)
     -- 빈 배열을 성공으로 돌려주면 호출한 AI 가 "결과 없음"과 "성공"을 구분하지 못한다.
     -- 데이터가 없으면 tool 에러로 알린다.
     if not rows or #rows == 0 then
+        debug_log("no_foot_traffic_data", { searched_radius_m = radius })
         return nil, "NO_DATA_IN_REGION"
     end
 
     -- 4) 점수화·랭킹 (코드)
     local ranked = score_and_rank(rows)
     if #ranked == 0 then
+        debug_log("ranking_completed", { cell_count = #rows, recommendation_count = 0, searched_radius_m = radius })
         return nil, "NO_DATA_IN_REGION"
     end
+    debug_log("ranking_completed", { cell_count = #rows, recommendation_count = #ranked, searched_radius_m = radius })
 
-    -- 5) 상위 N 역지오코딩 (좌표 → 한국어 주소)
-    for _, c in ipairs(ranked) do
-        c.address = geo.reverse(c.lat, c.lng) or "주소 미상"
+    -- 5) 외부 역지오코딩은 1위만 수행한다. Remote MCP 호출 제한 안에서 결과를 반환하기 위해
+    --    나머지 후보는 요청 지역 기준의 근접 후보임을 명시한다.
+    for index, c in ipairs(ranked) do
+        if index <= MAX_REVERSE_GEOCODES then
+            c.address = geo.reverse(c.lat, c.lng) or "주소 미상"
+        else
+            c.address = (target.region or "요청 지역") .. " 인근 후보"
+        end
     end
+
+    debug_log("response_completed", { recommendation_count = #ranked, searched_radius_m = radius })
 
     -- 6) 자연어 답변 + 구조화 데이터
     return {
