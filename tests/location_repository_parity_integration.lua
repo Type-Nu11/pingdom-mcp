@@ -67,16 +67,22 @@ local ok, test_error = xpcall(function()
             account_id BIGINT,
             birth_year INTEGER,
             gender VARCHAR(8),
+            longitude DOUBLE PRECISION NOT NULL,
+            latitude DOUBLE PRECISION NOT NULL,
             geom geometry(Point, 4326) NOT NULL,
-            created_at TIMESTAMP NOT NULL
+            created_at TIMESTAMP NOT NULL,
+            observed_at TIMESTAMP NOT NULL
         ) ON COMMIT DROP
     ]])
     db.query([[
-        INSERT INTO mcp_spatial_raw_data (account_id, birth_year, gender, geom, created_at)
+        INSERT INTO mcp_spatial_raw_data
+            (account_id, birth_year, gender, longitude, latitude, geom, created_at, observed_at)
         SELECT
             point_number,
             1980 + (point_number % 35),
             CASE WHEN point_number % 2 = 0 THEN 'M' ELSE 'F' END,
+            128.5955669 + (((point_number % 20) - 10) * 0.0003),
+            35.9235922 + (((point_number / 20) - 5) * 0.0003),
             ST_SetSRID(
                 ST_MakePoint(
                     128.5955669 + (((point_number % 20) - 10) * 0.0003),
@@ -84,8 +90,8 @@ local ok, test_error = xpcall(function()
                 ),
                 4326
             ),
-            TIMESTAMP '2026-08-20 00:00:00'
-                + ((point_number % 24) || ' hours')::interval
+            TIMESTAMP '2026-08-20 00:00:00' + ((point_number % 24) || ' hours')::interval,
+            TIMESTAMP '2026-08-20 00:00:00' + ((point_number % 24) || ' hours')::interval
         FROM generate_series(0, 199) AS point_number
     ]])
 
