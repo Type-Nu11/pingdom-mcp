@@ -99,7 +99,7 @@ function LocationRepository:aggregateInRadius(
     local by_min = tonumber(birth_year_min)
     local by_max = tonumber(birth_year_max)
 
-    -- 위·경도 B-tree 인덱스를 먼저 사용해 후보 행을 줄인 뒤, geography 거리로 정확히 확인한다.
+    -- 위·경도 covering B-tree 인덱스만 읽어 후보를 집계한다.
     -- 경도 1도의 실제 거리는 위도에 따라 달라지므로 위도별 보정값을 적용한다.
     local latitude = tonumber(center_lat)
     local longitude = tonumber(center_lng)
@@ -110,10 +110,11 @@ function LocationRepository:aggregateInRadius(
     local longitude_delta = radius / (111320.0 * math.max(math.abs(math.cos(math.rad(latitude))), 0.01))
     local min_latitude, max_latitude = latitude - latitude_delta, latitude + latitude_delta
     local min_longitude, max_longitude = longitude - longitude_delta, longitude + longitude_delta
+    local meters_per_longitude = 111320.0 * math.max(math.abs(math.cos(math.rad(latitude))), 0.01)
 
     local sql = [[
         SELECT
-            ST_GeoHash(geom, ?) AS cell,
+            ST_GeoHash(ST_SetSRID(ST_MakePoint(longitude, latitude), 4326), ?) AS cell,
             COUNT(*) AS total_foot,
             COUNT(*) FILTER (
                 WHERE ? IS NOT NULL
@@ -129,11 +130,8 @@ function LocationRepository:aggregateInRadius(
         FROM mcp_spatial_raw_data
         WHERE latitude BETWEEN ? AND ?
           AND longitude BETWEEN ? AND ?
-          AND ST_DWithin(
-            geom::geography,
-            ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography,
-            ?
-        )
+          AND POWER((longitude - ?) * ?, 2)
+              + POWER((latitude - ?) * 111320.0, 2) <= POWER(?, 2)
         GROUP BY 1
     ]]
 
@@ -143,7 +141,7 @@ function LocationRepository:aggregateInRadius(
         by_min, by_max, by_min, by_max,
         gender, gender,
         min_latitude, max_latitude, min_longitude, max_longitude,
-        longitude, latitude, radius
+        longitude, meters_per_longitude, latitude, radius
     )
 end
 
