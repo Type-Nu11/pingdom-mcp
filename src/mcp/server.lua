@@ -61,6 +61,8 @@ function MCPServer.callTool(name, args)
                         center = result.center,
                         searched_radius_m = result.searched_radius_m,
                         recommendations = result.recommendations,
+                        statistics = result.statistics,
+                        nearby_places = result.nearby_places,
                     }),
                 },
             },

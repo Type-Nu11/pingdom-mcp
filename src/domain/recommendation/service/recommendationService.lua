@@ -277,6 +277,65 @@ function RecommendationService.recommend(input)
     end
     debug_log("ranking_completed", { cell_count = #rows, recommendation_count = #ranked, searched_radius_m = radius })
 
+    -- 같은 원천 집합에서 보고서에 필요한 분포를 집계한다. 실패해도 추천 자체는 반환한다.
+    local statistics_rows, statistics_error
+    if type(locationRepo.summarizeInRadius) == "function" then
+        statistics_rows, statistics_error = locationRepo:summarizeInRadius(
+            lng, lat, radius, by_min, by_max
+        )
+    else
+        statistics_error = "STATISTICS_UNSUPPORTED"
+    end
+    local statistics
+    if statistics_error or not statistics_rows or not statistics_rows[1] then
+        debug_log("database_statistics_failed", { radius_m = radius, error = statistics_error })
+    else
+        local row = statistics_rows[1]
+        local function decode_array(value)
+            if type(value) ~= "string" then return value or {} end
+            local ok, decoded = pcall(cjson.decode, value)
+            return ok and decoded or {}
+        end
+        statistics = {
+            total = tonumber(row.total) or 0,
+            age_match = tonumber(row.age_match) or 0,
+            gender = decode_array(row.gender),
+            age = decode_array(row.age),
+            by_time = decode_array(row.by_time),
+            by_day = decode_array(row.by_day),
+            by_month = decode_array(row.by_month),
+        }
+        debug_log("database_statistics_completed", {
+            radius_m = radius,
+            total = statistics.total,
+            age_match = statistics.age_match,
+            gender_count = #statistics.gender,
+            time_count = #statistics.by_time,
+            day_count = #statistics.by_day,
+            month_count = #statistics.by_month,
+        })
+    end
+
+    local nearby_places
+    if type(locationRepo.findNearbyPlaces) == "function" then
+        local nearby_rows, nearby_error = locationRepo:findNearbyPlaces(lng, lat, radius)
+        if nearby_error then
+            debug_log("nearby_places_failed", { radius_m = radius, error = nearby_error })
+        else
+            nearby_places = {}
+            for _, place in ipairs(nearby_rows or {}) do
+                nearby_places[#nearby_places + 1] = {
+                    place_id = tonumber(place.place_id),
+                    name = place.name,
+                    address = place.address,
+                    category = place.category,
+                    distance_m = tonumber(place.distance_m),
+                }
+            end
+            debug_log("nearby_places_completed", { radius_m = radius, count = #nearby_places })
+        end
+    end
+
     -- 5) 외부 역지오코딩은 1위만 수행한다. Remote MCP 호출 제한 안에서 결과를 반환하기 위해
     --    나머지 후보는 요청 지역 기준의 근접 후보임을 명시한다.
     for index, c in ipairs(ranked) do
@@ -296,6 +355,8 @@ function RecommendationService.recommend(input)
         center          = { lat = lat, lng = lng },
         searched_radius_m = radius,
         recommendations = ranked,
+        statistics      = statistics,
+        nearby_places   = nearby_places,
     }
 end
 
