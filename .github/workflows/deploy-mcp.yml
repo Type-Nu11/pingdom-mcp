@@ -106,8 +106,11 @@ jobs:
               git -C "$deploy_path" restore -- logs/access.log logs/error.log logs/nginx.pid nginx.conf.compiled 2>/dev/null || true
 
               if [ -n "$(git -C "$deploy_path" status --porcelain)" ]; then
-                  echo "Deployment checkout has local changes; refusing to overwrite them." >&2
-                  exit 1
+                  # 운영 서버에서 실수로 수정된 추적 파일도 삭제하지 않고 보관한 뒤 배포한다.
+                  # .env는 ignored 파일이므로 --include-untracked 대상에도 포함되지 않는다.
+                  stash_name="pre-deploy-$(date +%Y%m%d%H%M%S)"
+                  echo "Deployment checkout has local changes; preserving them in git stash: ${stash_name}" >&2
+                  git -C "$deploy_path" stash push --include-untracked --message "$stash_name"
               fi
 
               git -C "$deploy_path" fetch origin "$deploy_branch"

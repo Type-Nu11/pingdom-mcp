@@ -156,6 +156,8 @@ Secrets에 아래 값을 등록해야 합니다.
 배포는 GitHub Actions concurrency로 중복 실행을 직렬화하고, Docker healthcheck와
 `GET /health`가 `200`을 반환할 때만 성공 처리합니다. L7 Proxy 또는 별도 로드밸런서가
 앞단에서 이 포트를 바라보면 새 컨테이너가 healthy 상태가 된 뒤 트래픽을 넘길 수 있습니다.
+배포 서버 체크아웃에 추적 파일 변경이 남아 있어도 기존 변경은 삭제하지 않고 Git stash에
+보관한 뒤 배포합니다. 운영 설정은 저장소 파일이 아니라 서버의 `.env`로 관리해야 합니다.
 
 =======
 | Primary | Lua |
