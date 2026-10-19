@@ -16,6 +16,13 @@ services:
       DB_USER: postgres
       DB_PASSWORD: postgres
       DB_NAME: pingdom_dev
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8080/health >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    restart: unless-stopped
 
   db:
     image: postgis/postgis:15-3.4  # 앱이 ST_DWithin/ST_MakePoint 등 PostGIS 함수를 사용

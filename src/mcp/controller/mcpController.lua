@@ -16,7 +16,7 @@ local PROTOCOL_HEADER = "mcp-protocol-version"
 -- 세션 헤더가 없는 구(2025-03-26) 클라이언트를 위한 기본값
 local DEFAULT_PROTOCOL_VERSION = "2025-03-26"
 
--- MCP_AUTH_TOKEN 이 설정돼 있으면 Authorization: Bearer <token> 을 요구한다.
+-- MCP_AUTH_TOKEN 이 설정돼 있으면 mcp-token: <token> 을 요구한다.
 -- Gemini Remote MCP 는 tools[].headers 로 이 값을 실어 보낸다.
 -- 공개 URL 로 노출되는 순간 무인증이면 누구나 DB/LLM 을 호출할 수 있으므로 운영에서는 필수.
 local function authorized(self)
@@ -24,8 +24,8 @@ local function authorized(self)
     if not expected or expected == "" then
         return true   -- 미설정 = 로컬 개발
     end
-    local header = self.req.headers["authorization"]
-    return header == "Bearer " .. expected
+    local header = self.req.headers["mcp-token"]
+    return header == expected
 end
 
 local function jsonrpc_error(status, code, message, id)
