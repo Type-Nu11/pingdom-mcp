@@ -101,6 +101,10 @@ jobs:
                       ;;
               esac
 
+              # 이전 배포에서 생성된 로그/PID/컴파일 산출물은 소스 변경이 아니므로
+              # 체크아웃을 갱신하기 전에 정리한다. 운영 .env는 정리 대상이 아니다.
+              git -C "$deploy_path" restore -- logs/access.log logs/error.log logs/nginx.pid nginx.conf.compiled 2>/dev/null || true
+
               if [ -n "$(git -C "$deploy_path" status --porcelain)" ]; then
                   echo "Deployment checkout has local changes; refusing to overwrite them." >&2
                   exit 1
