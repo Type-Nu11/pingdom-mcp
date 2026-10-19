@@ -13,7 +13,8 @@ RUN apk add --no-cache \
     postgresql-dev \
     lua5.3-dev \
     lua5.3 \
-    luarocks
+    luarocks \
+    wget
 
 WORKDIR /app
 

@@ -135,6 +135,28 @@ GEMINI_API_KEY=your_key_here
 GEMINI_MODEL=gemini-3.1-flash-lite
 ```
 
+### GitHub Actions 배포
+
+`main` 브랜치에 push하면 `.github/workflows/deploy-mcp.yml`이 운영 인스턴스에 SSH로 접속해
+최신 커밋을 가져오고 Docker Compose로 MCP 앱을 재빌드합니다. 배포 대상 저장소의 GitHub Actions
+Secrets에 아래 값을 등록해야 합니다.
+
+| Secret | Description |
+|---|---|
+| `DEPLOY_HOST` | 운영 서버 호스트명 또는 IP |
+| `DEPLOY_USER` | SSH 로그인 사용자 |
+| `DEPLOY_PATH` | MCP 저장소의 절대 경로(루트 `/` 제외) |
+| `DEPLOY_SSH_KEY` | 배포용 Ed25519 개인 키 |
+| `DEPLOY_KNOWN_HOSTS` | `ssh-keyscan`으로 생성한 운영 서버 호스트 키 |
+
+운영 서버에는 Docker Compose v2, `curl`, `sudo`가 설치되어 있어야 하며, 배포 사용자가
+`sudo -n docker compose`를 실행할 수 있어야 합니다. `.env`는 서버의 `DEPLOY_PATH`에 미리
+생성하고 `MCP_AUTH_TOKEN`, `GEMINI_API_KEY`, 외부 DB 접속 정보를 운영 값으로 설정합니다.
+
+배포는 GitHub Actions concurrency로 중복 실행을 직렬화하고, Docker healthcheck와
+`GET /health`가 `200`을 반환할 때만 성공 처리합니다. L7 Proxy 또는 별도 로드밸런서가
+앞단에서 이 포트를 바라보면 새 컨테이너가 healthy 상태가 된 뒤 트래픽을 넘길 수 있습니다.
+
 =======
 | Primary | Lua |
 | Framework | Lapis |
