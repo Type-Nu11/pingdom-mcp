@@ -119,7 +119,7 @@ docker-compose build --pull --no-cache
 docker-compose up
 ```
 
-기본적으로 앱은 컨테이너 내부 8080 포트를 사용하며, 호스트의 8080으로 포워딩됩니다. Postgres는 `db` 서비스로 함께 올라옵니다.
+기본적으로 앱은 컨테이너 내부 8080 포트를 사용하며, 호스트의 8081로 포워딩됩니다. Postgres는 `db` 서비스로 함께 올라옵니다.
 
 환경 변수는 루트의 `.env` 파일을 사용하세요. 예:
 
@@ -153,11 +153,37 @@ Secrets에 아래 값을 등록해야 합니다.
 `sudo -n docker compose`를 실행할 수 있어야 합니다. `.env`는 서버의 `DEPLOY_PATH`에 미리
 생성하고 `MCP_AUTH_TOKEN`, `GEMINI_API_KEY`, 외부 DB 접속 정보를 운영 값으로 설정합니다.
 
-배포는 GitHub Actions concurrency로 중복 실행을 직렬화하고, Docker healthcheck와
-`GET /health`가 `200`을 반환할 때만 성공 처리합니다. L7 Proxy 또는 별도 로드밸런서가
+운영 배포는 `docker-compose.production.yml`만 사용합니다. 개발용 `docker-compose.yml`은
+`DB_HOST=db`, `DB_NAME=pingdom_dev`를 고정하므로 운영 배포에 병합하지 않습니다.
+운영용 파일은 DB 접속 정보가 없으면 실패하며 별도 DB나 볼륨을 생성하지 않습니다.
+기존 개발용 DB 컨테이너와 볼륨도 자동 삭제하지 않습니다.
+
+첫 배포 전에 서버 `.env`의 `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`을
+Backend의 분석 데이터가 적재된 DB에 맞추고 `MCP_DB_NETWORK`를 해당 PostgreSQL의
+기존 Docker 네트워크 이름으로 지정하세요. 같은 호스트의 기본 Backend 구성은
+`DB_HOST=postgres`, `DB_NAME=pingdom`, `MCP_DB_NETWORK=pingdom_default`입니다.
+접속 비밀번호는 저장소나 Actions 로그에 출력하지 않습니다. 구체적인 항목은
+[환경 변수 템플릿](env_template.md)을 참고하세요.
+
+배포는 GitHub Actions concurrency로 중복 실행을 직렬화합니다. 새 이미지 빌드 후
+같은 Compose 설정으로 `scripts/check-database.lua`를 실행해 PostGIS와
+`mcp_spatial_raw_data`, `map_place`의 필수 컬럼 및 SELECT 권한을 읽기 전용으로 검사합니다.
+검사가 실패하면 앱을 교체하지 않습니다. 검사에서는 원시 행을 읽거나 스키마를 변경하지 않습니다.
+Docker healthcheck와 `GET /health`가 `200`을 반환해야 배포를 성공 처리합니다.
+이 검사는 실제 `recommend_location` 분석이나 PDF 생성 성공까지 보장하지 않으므로,
+배포 후 인증된 분석 요청으로 PDF 응답을 별도로 확인해야 합니다. L7 Proxy 또는 별도 로드밸런서가
 앞단에서 이 포트를 바라보면 새 컨테이너가 healthy 상태가 된 뒤 트래픽을 넘길 수 있습니다.
 배포 서버 체크아웃에 추적 파일 변경이 남아 있어도 기존 변경은 삭제하지 않고 Git stash에
 보관한 뒤 배포합니다. 운영 설정은 저장소 파일이 아니라 서버의 `.env`로 관리해야 합니다.
+
+수동 배포도 동일한 파일을 사용합니다.
+
+```bash
+docker compose -f docker-compose.production.yml config --quiet
+docker compose -f docker-compose.production.yml build app
+docker compose -f docker-compose.production.yml run --rm --no-deps -T app lua5.3 scripts/check-database.lua
+docker compose -f docker-compose.production.yml up -d --no-build --no-deps --wait app
+```
 
 =======
 | Primary | Lua |

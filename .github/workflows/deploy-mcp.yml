@@ -141,10 +141,15 @@ jobs:
               exit 1
           fi
 
-          sudo -n docker compose config --quiet
-          sudo -n docker compose ps >&2
+          # 운영에서는 로컬 db 서비스와 하드코딩된 개발 DB 설정을 사용하지 않는다.
+          # 새 컨테이너 생성 전에 같은 설정으로 스키마와 조회 권한을 확인한다.
+          sudo -n docker compose -f docker-compose.production.yml config --quiet
+          sudo -n docker compose -f docker-compose.production.yml ps >&2
+          sudo -n docker compose -f docker-compose.production.yml build app
+          sudo -n docker compose -f docker-compose.production.yml run --rm --no-deps -T app \
+              lua5.3 scripts/check-database.lua
           # healthcheck가 통과한 새 컨테이너가 준비될 때까지 배포 명령이 대기한다.
-          sudo -n docker compose up -d --build --no-deps --wait app
+          sudo -n docker compose -f docker-compose.production.yml up -d --no-build --no-deps --wait app
 
           health_status=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 http://127.0.0.1:8081/health)
           echo "MCP health-check HTTP status: $health_status" >&2

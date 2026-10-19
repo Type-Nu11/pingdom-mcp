@@ -1,0 +1,31 @@
+# 개발용 docker-compose.yml과 병합하지 않고 이 파일만 사용한다.
+services:
+  app:
+    build: .
+    ports:
+      - "8081:8080"
+    volumes:
+      - ./:/app
+    env_file:
+      - .env
+    environment:
+      PORT: 8080
+      DB_HOST: ${DB_HOST:?Set the production DB_HOST in .env}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_USER: ${DB_USER:?Set the production DB_USER in .env}
+      DB_PASSWORD: ${DB_PASSWORD:?Set the production DB_PASSWORD in .env}
+      DB_NAME: ${DB_NAME:?Set the production DB_NAME in .env}
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8080/health >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    restart: unless-stopped
+
+networks:
+  backend:
+    external: true
+    name: ${MCP_DB_NETWORK:?Set the existing backend Docker network in .env}
