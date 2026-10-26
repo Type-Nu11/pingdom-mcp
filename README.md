@@ -62,69 +62,47 @@ LLM 모델을 활용하여 분석 및 정리된 결과를 제공하는 MCP 기�
 
 | Category | Technology |
 |---|---|
-| Load | Backend Server 수집 가능한 사용자 데이터 로드 |
-| Place | 유동인구가 가장 활발한 장소 조회 |
-| Privacy | 개인정보 처리 요청 관리 |
+| Primary | Lua 5.3 |
+| Framework | Lapis |
+| Database | PostgreSQL, PostGIS |
+| Database Access | Pgmoon |
+| Runtime | Cqueues |
+| AI | Gemini API |
+| Delivery | Docker, Docker Compose, GitHub Actions |
 
----
+## Getting Started
 
-# Architecture
+### Requirements
 
-Pingdom MCP Server는
-도메인 책임을 기준으로 분리한
+- Git
+- Docker 및 Docker Compose
+- 추천 분석을 실행할 경우 Gemini API Key와 분석 데이터
 
-**Event-Driven Modular Monolith + MCP Architecture**
-
-구조를 사용합니다.
-
-```text
-AI Agent
-    │
-    │ MCP Protocol
-    ▼
-Lapis MCP Server
-    │
-    ├───────────────┐
-    ▼               ▼
- MCP Tools       MCP Resources
-    │
-    ▼
-Application Domain Layer
-    │
- ┌──┼─────────────┐
- ▼  ▼             ▼
-Service      Repository
-Layer           Layer
- │               │
- ▼               ▼
-PostgreSQL     Redis
-PostGIS
- │
- ▼
-Async Worker
- │
- ├──── S3
- ├──── FCM
- └──── Email Provider
-```
-
-## Docker
-
-간단한 개발용 Docker 환경을 추가했습니다. 로컬에 Lua/Luarocks가 없어도 컨테이너로 앱을 실행할 수 있습니다.
-
-빌드 및 실행:
+### Setup
 
 ```bash
-docker-compose build --pull --no-cache
-docker-compose up
+git clone https://github.com/Type-Nu11/pingdom-mcp.git
+cd pingdom-mcp
 ```
 
-기본적으로 앱은 컨테이너 내부 8080 포트를 사용하며, 호스트의 8081로 포워딩됩니다. Postgres는 `db` 서비스로 함께 올라옵니다.
+[환경 변수 템플릿](env_template.md)을 기준으로 루트에 `.env`를 작성합니다.
 
-환경 변수는 루트의 `.env` 파일을 사용하세요. 예:
+### Usage
 
-```env
-# .env 예시
+```bash
+docker compose build
+docker compose up -d
+```
+
+개발용 Compose는 PostGIS 데이터베이스를 함께 실행하고 앱의 내부 `8080` 포트를
+호스트 `8081`로 전달합니다. 생존 상태는 `http://localhost:8081/health`에서 확인합니다.
+컨테이너는 `lapis server`로 실행합니다. `lua app.lua`는 서버 실행 명령이 아닙니다.
+
+## Configuration
+
+설정은 `config.lua`, `.env` 및 [환경 변수 템플릿](env_template.md)에서 관리합니다.
+
+```dotenv
 PORT=8080
 DB_HOST=db
 DB_PORT=5432
@@ -134,6 +112,9 @@ DB_NAME=pingdom_dev
 GEMINI_API_KEY=your_key_here
 GEMINI_MODEL=gemini-3.1-flash-lite
 ```
+
+위 DB 값은 개발용 Compose 기준입니다. 공개 MCP 연결에는 `MCP_AUTH_TOKEN`을 설정하고
+클라이언트가 `mcp-token` 헤더로 전달해야 합니다. 실제 인증정보와 운영 비밀 값은 커밋하지 않습니다.
 
 ### GitHub Actions 배포
 
@@ -185,106 +166,76 @@ docker compose -f docker-compose.production.yml run --rm --no-deps -T app lua5.3
 docker compose -f docker-compose.production.yml up -d --no-build --no-deps --wait app
 ```
 
-=======
-| Primary | Lua |
-| Framework | Lapis |
-| Database | PostgreSQL + PostGIS |
-| Database Access | Pgmoon |
-| Runtime | LuaJIT + Cqueues |
-| Delivery | Docker |
+## Verification
 
-## Getting Started
+변경 범위와 실행 환경에 맞는 검사를 선택합니다.
 
-이 저장소를 확인하거나 실행하기 위해 필요한 최소 절차입니다.
+| Verification | Purpose |
+|---|---|
+| `python3 scripts/test-production-compose.py` | 개발·운영 Compose 분리 계약 검사 |
+| `lua5.3 tests/mcp_protocol.lua` | MCP 프로토콜 처리 검사 |
+| `lua5.3 tests/rest_mcp_bridge.lua` | REST와 MCP 연결 계약 검사 |
+| `curl -f http://localhost:8081/health` | 실행 중인 앱의 생존 상태 확인 |
 
-### Requirements
+Lua 검사는 해당 런타임과 필요한 모듈이 설치된 환경에서 실행합니다. DB 및 Gemini를 사용하는
+분석 검증은 별도로 수행합니다. `/health` 성공만으로 추천 분석이나 PDF 응답의 성공을 판단하지 않습니다.
 
-- LuaJIT
-- Docker
-- PostgreSQL
-- PostGIS Extension
-- LLM API 사용을 위한 환경 구성
+## Repository Structure
 
-### Setup
-
-```bash
-git clone https://github.com/Type-Nu11/pingdom-mcp
-cd pingdom-mcp
+```text
+.
+├── app.lua                        # Lapis 애플리케이션 진입점
+├── config.lua                     # 실행 환경과 데이터베이스 설정
+├── src
+│   ├── ai                         # LLM 어댑터
+│   ├── domain                     # 위치·추천 도메인
+│   ├── global                     # 환경변수, 예외 및 데이터 접근
+│   ├── mcp                        # MCP 전송, 프로토콜 및 세션
+│   ├── modules                    # 공간 데이터와 Gemini 연동
+│   └── pingdomApplication.lua     # HTTP 라우트 등록
+├── scripts                        # 데이터베이스·Compose 검증
+├── tests                          # 프로토콜·서비스 검사
+├── sql                            # 스키마와 초기 데이터
+├── docker-compose.yml             # 개발용 앱과 PostGIS
+├── docker-compose.production.yml  # 기존 운영 DB에 연결하는 앱
+├── Dockerfile
+└── README.md
 ```
 
-PostgreSQL 및 PostGIS 환경을 준비합니다.
+### Architecture
 
-PostgreSQL
-PostGIS Extension
-Usage
-luajit app.lua
+요청은 Lapis HTTP 라우트에서 MCP 또는 REST 컨트롤러로 전달되고,
+위치·추천 서비스와 Repository를 통해 PostgreSQL/PostGIS 및 Gemini와 연동됩니다.
+구체적인 진입점은 `src/pingdomApplication.lua`와 `src/mcp/`에서 관리합니다.
 
-저장소 실행 방식은 개발 환경 구성에 따라 변경될 수 있습니다.
+## Related Repositories
 
-### Configuration
+| Repository | Relationship |
+|---|---|
+| [pingdom-api](https://github.com/Type-Nu11/pingdom-api) | MCP 요청 전달 및 분석 결과 활용 |
+| [pingdom-infra](https://github.com/Type-Nu11/pingdom-infra) | MCP 요청 인증과 프록시 라우팅 |
 
-설정에 필요한 항목은 애플리케이션 초기화 파일 및 환경 구성을 기준으로 관리합니다.
+## Documentation
 
-app.lua
-src/pingdomApplication.lua
+| Document | Description |
+|---|---|
+| [Environment](env_template.md) | 개발·운영 환경변수와 MCP 인증 설정 |
 
-실제 인증정보, API Key, 비밀 값 및 운영 환경 정보는 저장소에 커밋하지 않습니다.
-
-### Verification
-
-저장소 변경사항은 다음 방법으로 검증합니다.
-
-luajit app.lua
-
-검증 방식이 여러 개인 경우 목적별로 구분합니다.
-
-Verification	Purpose
-luajit app.lua	MCP Server 실행 및 기본 동작 확인
-PostgreSQL + PostGIS 환경	위치 데이터 처리 검증
-Docker 실행 환경	서비스 실행 환경 검증
-Repository Structure
-.
-├── README.md
-├── app.lua                         # MCP Server 실행 진입점
-├── models.lua                      # 데이터 모델 정의
-├── sql
-│   └── seed_locations.sql          # 초기 위치 데이터 및 테스트 데이터
-└── src
-    ├── domain
-    │   ├── location                # 위치 데이터 관련 도메인 로직
-    │   └── recommendation          # 추천 관련 도메인 로직
-    ├── global
-    │   ├── exceptions               # 공통 예외 처리
-    │   └── repository               # 공통 Repository 계층
-    ├── modules
-    │   ├── GeoEncoder.lua           # 위치 데이터 인코딩 처리
-    │   ├── baseRepository.lua       # Repository 기본 기능
-    │   ├── geohash.lua              # Geohash 기반 공간 데이터 처리
-    │   └── groqClient.lua           # LLM API 연동 모듈
-    └── pingdomApplication.lua       # 애플리케이션 초기화 및 구성
-
-실제 구조를 기준으로 주요 디렉터리와 파일만 설명합니다.
-
-Related Repositories
-Repository	Relationship
-Pingdom Backend Server	MCP 요청 전달 및 결과 활용
-Pingdom Infrastructure	서비스 배포 및 운영 환경 관리
-
-공개되어 있거나 접근 가능한 저장소만 연결합니다.
-
-### Documentation
-Document	Description
--	별도 공개 문서 없음
-Release and Compatibility
+## Release and Compatibility
 
 현재 버전은 GA(General Availability) 단계입니다.
 
-호환성에 영향을 주는 변경사항은 Release와 관련 문서를 통해 안내합니다.
-변경사항은 저장소의 Release 또는 변경 이력을 기준으로 확인합니다.
-### License
+변경사항은 저장소의 Release 또는 Git 변경 이력을 기준으로 확인합니다.
+호환성에 영향을 주는 변경사항은 관련 문서와 변경 이력을 통해 안내합니다.
 
-이 프로젝트는 MIT License를 따릅니다.
+## License
 
-자세한 내용은 LICENSE 파일을 참고하세요.
+이 프로젝트의 사용 및 배포 조건은 [MIT License](LICENSE)를 따릅니다.
 
-Part of Pingdom
+---
+
+<div align="center">
+
+Part of **Pingdom**
+
+</div>
